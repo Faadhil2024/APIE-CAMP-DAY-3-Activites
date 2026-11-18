@@ -86,48 +86,61 @@ function QuestionBlock({ q, agg }: { q: Q; agg?: PublicLiveResults['questions'][
 export function LiveResults({ onSessionReset }: LiveResultsProps) {
   const [results, setResults] = useState<PublicLiveResults | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const lastSessionSignature = useRef<string | null>(null);
 
   useEffect(() => {
     let closed = false;
-    const source = new EventSource('/api/stream/results');
+    let inFlight = false;
 
-    source.onopen = () => {
-      if (!closed) {
-        setError(null);
-      }
-    };
-
-    source.addEventListener('results', (event) => {
-      if (closed) return;
+    const fetchResults = async () => {
+      if (closed || inFlight) return;
+      inFlight = true;
       try {
-        const parsed = JSON.parse((event as MessageEvent).data) as PublicLiveResults;
+        const res = await fetch('/api/results/live', { cache: 'no-store' });
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status}`);
+        }
+        const parsed = (await res.json()) as PublicLiveResults;
+        if (closed) return;
+
+        const nextSignature = `${parsed.session.id}:${parsed.session.createdAt}`;
+        if (
+          lastSessionSignature.current !== null &&
+          lastSessionSignature.current !== nextSignature
+        ) {
+          onSessionReset?.();
+        }
+        lastSessionSignature.current = nextSignature;
+
         setResults(parsed);
         setError(null);
       } catch {
-        // Ignore malformed event
-      }
-    });
-
-    source.addEventListener('session_reset', (event) => {
-      if (closed) return;
-      try {
-        const parsed = JSON.parse((event as MessageEvent).data) as PublicLiveResults;
-        setResults(parsed);
-      } catch {
-        // Ignore
-      }
-      onSessionReset?.();
-    });
-
-    source.onerror = () => {
-      if (!closed) {
-        setError('Reconnecting to live results stream...');
+        if (!closed) {
+          setError('Reconnecting to live results...');
+        }
+      } finally {
+        inFlight = false;
       }
     };
+
+    void fetchResults();
+    const interval = window.setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        void fetchResults();
+      }
+    }, 3000);
+
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        void fetchResults();
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibility);
 
     return () => {
       closed = true;
-      source.close();
+      window.clearInterval(interval);
+      document.removeEventListener('visibilitychange', onVisibility);
     };
   }, [onSessionReset]);
 

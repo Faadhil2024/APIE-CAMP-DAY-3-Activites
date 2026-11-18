@@ -164,6 +164,7 @@ export default function App() {
   const handleSelectAnswer = async (questionId: string, choice: AnswerChoice) => {
     if (!student || !studentToken) return;
     setStudentError(null);
+    const previousSnapshot = student;
 
     // Optimistic local update
     setStudent((prev) => {
@@ -187,13 +188,20 @@ export default function App() {
         },
         body: JSON.stringify({ questionId, choice }),
       });
-      const data = (await res.json()) as { student?: StudentSelfState; error?: string };
+      let data: { student?: StudentSelfState; error?: string } = {};
+      try {
+        data = (await res.json()) as { student?: StudentSelfState; error?: string };
+      } catch {
+        // Ignore parse error on unexpected error pages
+      }
       if (!res.ok || !data.student) {
-        setStudentError(data.error || 'Could not save your answer.');
+        setStudent(previousSnapshot);
+        setStudentError(data.error || 'Could not save your answer. Please try again.');
         return;
       }
       setStudent(data.student);
     } catch {
+      setStudent(previousSnapshot);
       setStudentError('Connection interrupted while saving. Please try selecting again.');
     } finally {
       setSaving(false);

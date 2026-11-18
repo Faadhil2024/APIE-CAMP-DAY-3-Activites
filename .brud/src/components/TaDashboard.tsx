@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ArrowLeft,
   Check,
@@ -57,54 +57,58 @@ export function TaDashboard({ taToken, onUnauthorized, onLogout }: TaDashboardPr
   const [actionBusy, setActionBusy] = useState(false);
   const [exportingCsv, setExportingCsv] = useState(false);
 
+  const fetchOverview = useCallback(async () => {
+    try {
+      const res = await fetch('/api/ta/overview', {
+        headers: { Authorization: `Bearer ${taToken}` },
+        cache: 'no-store',
+      });
+      if (res.status === 401) {
+        onUnauthorized();
+        return;
+      }
+      if (!res.ok) {
+        setConnected(false);
+        setError('Live connection interrupted. Retrying...');
+        return;
+      }
+      const parsed = (await res.json()) as TaDashboardPayload;
+      setData(parsed);
+      setConnected(true);
+      setError(null);
+    } catch {
+      setConnected(false);
+      setError('Live connection interrupted. Retrying...');
+    }
+  }, [taToken, onUnauthorized]);
+
   useEffect(() => {
     let closed = false;
-    const source = new EventSource(`/api/stream/ta?token=${encodeURIComponent(taToken)}`);
-
-    source.onopen = () => {
-      if (!closed) {
-        setConnected(true);
-        setError(null);
-      }
-    };
-
-    const handlePayload = (event: Event) => {
+    const poll = async () => {
       if (closed) return;
-      try {
-        const parsed = JSON.parse((event as MessageEvent).data) as TaDashboardPayload;
-        setData(parsed);
-        setConnected(true);
-        setError(null);
-      } catch {
-        // Ignore parse issues
-      }
+      await fetchOverview();
     };
 
-    source.addEventListener('ta_overview', handlePayload);
-    source.addEventListener('session_reset', handlePayload);
-
-    source.onerror = async () => {
-      if (closed) return;
-      setConnected(false);
-      try {
-        const check = await fetch('/api/ta/verify', {
-          headers: { Authorization: `Bearer ${taToken}` },
-        });
-        if (check.status === 401) {
-          onUnauthorized();
-          return;
-        }
-      } catch {
-        // Network issue
+    void poll();
+    const interval = window.setInterval(() => {
+      if (!closed && document.visibilityState === 'visible') {
+        void poll();
       }
-      setError('Live connection interrupted. Reconnecting...');
+    }, 3000);
+
+    const onVisibility = () => {
+      if (!closed && document.visibilityState === 'visible') {
+        void poll();
+      }
     };
+    document.addEventListener('visibilitychange', onVisibility);
 
     return () => {
       closed = true;
-      source.close();
+      window.clearInterval(interval);
+      document.removeEventListener('visibilitychange', onVisibility);
     };
-  }, [taToken, onUnauthorized]);
+  }, [fetchOverview]);
 
   const filteredStudents = useMemo(() => {
     if (!data) return [];
@@ -201,6 +205,7 @@ export function TaDashboard({ taToken, onUnauthorized, onLogout }: TaDashboardPr
       setNewSessionLabel('');
       setResetInput('');
       setConfirmModal(null);
+      await fetchOverview();
     } catch {
       setError('Network error while updating session.');
     } finally {

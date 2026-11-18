@@ -134,6 +134,13 @@ export function StudentQuiz({
             <span className="text-slate-400">/{total}</span>
           </span>
         </div>
+        {error && (
+          <div className="mx-auto max-w-6xl px-4 pb-3 sm:px-6">
+            <div role="alert" className="rounded-xl border border-rose-500/40 bg-rose-950/70 px-4 py-2 text-xs font-medium text-rose-200 sm:text-sm">
+              {error}
+            </div>
+          </div>
+        )}
       </div>
 
       {POLL_QUESTIONS.map((q, idx) => {
