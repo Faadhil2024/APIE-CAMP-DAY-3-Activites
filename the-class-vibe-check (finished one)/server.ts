@@ -7,7 +7,7 @@ import { vibeStore } from './server/store.ts';
 import type { AnswerChoice } from './src/shared/questions.ts';
 
 const PORT = Number(process.env.PORT || 3000);
-const TA_PASSCODE = process.env.TA_PASSCODE || 'vibe-ta-2026';
+const TA_PASSCODE = process.env.TA_PASSCODE || 'faadhil123';
 
 function loadOrCreateAuthSecret(): string {
   if (process.env.TA_AUTH_SECRET && process.env.TA_AUTH_SECRET.trim().length >= 16) {
